@@ -22,7 +22,7 @@ METERS_TO_FEET = 3.28084
 # --- Mappings for Plottable Variables ---
 PLOT_DISPLAY_MAPPING = {
     'speed_kmh':        'Speed (mph)',
-    'altitude':         'Elevation (ft)', # Display label for plotting
+    'altitude':         'Elevation (ft)',
     'heart_rate':       'Heart Rate (bpm)',
     'cadence':          'Cadence (rpm)',
     'power':            'Power (W)',
@@ -34,10 +34,9 @@ st.set_page_config(page_title="FIT File Analyzer", page_icon="🚴", layout="wid
 st.title("🚴 GPS Ride Analyzer (.FIT Files)")
 
 # --- Initialization ---
-database.init_db() # Ensure DB exists and has the latest schema
+database.init_db()
 
 # --- State Management ---
-# Initialize session state variables if they don't exist
 default_state = {
     'selected_ride_id': None,
     'ride_data_df': None,
@@ -45,6 +44,7 @@ default_state = {
     'upload_status_message': None,
     'upload_status_type': None,
     'confirm_delete': False
+    # No need to default ride_selector, its state is managed by the widget + selected_ride_id
 }
 for key, value in default_state.items():
     if key not in st.session_state:
@@ -61,7 +61,6 @@ def format_duration(seconds):
     except Exception: return "N/A"
 
 def load_ride_data(ride_id):
-    # (Function as defined in previous response - no change needed here)
     success = False
     if ride_id is not None:
         st.session_state['upload_status_message'] = None
@@ -91,9 +90,7 @@ def load_ride_data(ride_id):
         success = True
     return success
 
-
 def process_uploaded_file():
-    # (Function as defined in previous response - no change needed here)
     uploaded_file_object = st.session_state.get('fit_uploader')
     if uploaded_file_object is not None:
         filename = uploaded_file_object.name
@@ -112,7 +109,7 @@ def process_uploaded_file():
                 with st.spinner(f"Saving {filename} to database..."):
                     new_ride_id = database.add_ride(summary, df)
                 if new_ride_id:
-                    st.session_state['upload_status_message'] = f"Ride '{filename}' saved successfully with ID: {new_ride_id}. Loading..."
+                    st.session_state['upload_status_message'] = f"Ride '{filename}' saved successfully. Loading..."
                     st.session_state['upload_status_type'] = "success"
                     load_ride_data(new_ride_id) # Trigger load
                 else:
@@ -136,7 +133,7 @@ if st.session_state.get('upload_status_message'):
     if status_type == "success": st.sidebar.success(st.session_state['upload_status_message'])
     elif status_type == "error": st.sidebar.error(st.session_state['upload_status_message'])
     else: st.sidebar.info(st.session_state['upload_status_message'])
-    st.session_state['upload_status_message'] = None # Clear after displaying once
+    st.session_state['upload_status_message'] = None
 
 st.sidebar.markdown("---")
 
@@ -161,11 +158,19 @@ else:
         load_ride_data(newly_selected_ride_id)
         st.rerun() # Ensure main pane updates after selection
 
+    # --- Button to clear selection ---
     if st.session_state.get('selected_ride_id') is not None:
         if st.sidebar.button("Clear Selection / View Welcome"):
-            st.session_state.selected_ride_id = None; st.session_state.ride_data_df = None; st.session_state.ride_summary = None; st.session_state.upload_status_message = None; st.session_state.confirm_delete = False; st.session_state.ride_selector = None;
-            st.rerun()
+            # Reset relevant state variables EXCEPT the ones tied directly to widget keys
+            st.session_state.selected_ride_id = None
+            st.session_state.ride_data_df = None
+            st.session_state.ride_summary = None
+            st.session_state.upload_status_message = None
+            st.session_state.confirm_delete = False
+            # DO NOT try to set st.session_state.ride_selector here
+            st.rerun() # Rerun will redraw the selectbox with index=None
 
+    # --- Delete Button ---
     if st.session_state.get('selected_ride_id') is not None:
         st.sidebar.markdown("---"); st.sidebar.subheader("Manage Ride")
         ride_id = st.session_state.selected_ride_id
@@ -181,32 +186,46 @@ else:
                     success = database.delete_ride(ride_id)
                     st.session_state.upload_status_message = f"Ride '{name}' deleted." if success else f"Failed to delete ride '{name}'."
                     st.session_state.upload_status_type = 'success' if success else 'error'
-                st.session_state.selected_ride_id = None; st.session_state.ride_data_df = None; st.session_state.ride_summary = None; st.session_state.confirm_delete = False; st.session_state.ride_selector = None;
-                time.sleep(0.5); st.rerun()
-            if col2.button("Cancel"): st.session_state.confirm_delete = False; st.rerun()
+
+                # Reset state EXCEPT widget keys
+                st.session_state.selected_ride_id = None
+                st.session_state.ride_data_df = None
+                st.session_state.ride_summary = None
+                st.session_state.confirm_delete = False
+                # DO NOT try to set st.session_state.ride_selector here
+                time.sleep(0.5); st.rerun() # Rerun will redraw selectbox correctly
+            if col2.button("Cancel"):
+                st.session_state.confirm_delete = False
+                st.rerun()
 
 # --- Main Area ---
+# (Main area remains the same as the previous version)
 current_ride_id = st.session_state.get('selected_ride_id')
 
 if current_ride_id is None:
-    st.markdown("## Welcome to the FIT File Analyzer!"); st.markdown("Use the sidebar to upload or select a ride.")
-    if st.session_state.get('upload_status_message'): # Show leftover messages on welcome screen
+    # --- Welcome / Initial Screen ---
+    st.markdown("## Welcome to the FIT File Analyzer!")
+    st.markdown("Use the sidebar to upload or select a ride.")
+    # Display any lingering status messages
+    if st.session_state.get('upload_status_message'):
          status_type = st.session_state.get('upload_status_type', 'info')
          if status_type == "success": st.success(st.session_state['upload_status_message'])
          elif status_type == "error": st.error(st.session_state['upload_status_message'])
          else: st.info(st.session_state['upload_status_message'])
-         st.session_state['upload_status_message'] = None
+         st.session_state['upload_status_message'] = None # Clear after showing
 else:
+    # --- Display Selected Ride Data ---
     df = st.session_state.get('ride_data_df')
     summary = st.session_state.get('ride_summary')
     ride_id = current_ride_id
 
-    if st.session_state.get('upload_status_message'): # Show load-related messages
+    # Display any status messages related to loading this specific ride
+    if st.session_state.get('upload_status_message'):
         status_type = st.session_state.get('upload_status_type', 'info')
         if status_type == "success": st.success(st.session_state['upload_status_message'])
         elif status_type == "error": st.error(st.session_state['upload_status_message'])
         else: st.info(st.session_state['upload_status_message'])
-        st.session_state['upload_status_message'] = None
+        st.session_state['upload_status_message'] = None # Clear after showing
 
     if summary:
         st.header(f"Ride Details: {summary.get('filename', f'Ride ID {ride_id}')}")
@@ -237,29 +256,24 @@ else:
                 max_speed_mph_str = f"{max_speed_mph:.1f} mph"
             st.metric("Max Speed", max_speed_mph_str)
 
-            # --- Display Total Ascent ---
             total_gain_ft_str = "N/A"
-            gain_m = summary.get('total_elevation_gain_m') # Get value from summary
+            gain_m = summary.get('total_elevation_gain_m')
             if gain_m is not None:
-                gain_ft = gain_m * METERS_TO_FEET # Convert to feet
-                total_gain_ft_str = f"{gain_ft:.0f} ft" # Display as integer feet
-            st.metric("Total Ascent", total_gain_ft_str) # Use new label and value
-            # --- End Total Ascent Display ---
+                gain_ft = gain_m * METERS_TO_FEET
+                total_gain_ft_str = f"{gain_ft:.0f} ft"
+            st.metric("Total Ascent", total_gain_ft_str)
 
         st.markdown("---")
 
-    # Handle cases where loading failed
     if df is None and summary is not None:
         st.warning(f"Detailed data for Ride ID {ride_id} could not be loaded. Only summary shown.")
-    elif df is None and summary is None and ride_id is not None: # Check ride_id to ensure it's not the welcome screen
+    elif df is None and summary is None and ride_id is not None:
         st.error(f"Could not load any information for Ride ID {ride_id}.")
 
-    # Display tabs only if df is loaded
     if df is not None and not df.empty:
         tab_map, tab_plots, tab_data = st.tabs(["🗺️ Route Map", "📊 Data Plots", "🗂️ Raw Data"])
 
         with tab_map:
-            # (Tab content as before)
             st.subheader("Route Map")
             map_df = df[['latitude', 'longitude']].dropna()
             if len(map_df) >= 2:
@@ -270,7 +284,6 @@ else:
             else: st.warning("Not enough GPS data for map.")
 
         with tab_plots:
-            # (Tab content as before, using display mapping)
             st.subheader("Data Plots")
             available_internal_cols = [col for col in PLOT_DISPLAY_MAPPING.keys() if col in df.columns and pd.api.types.is_numeric_dtype(df[col]) and df[col].notna().any()]
             plottable_display_options = [PLOT_DISPLAY_MAPPING[col] for col in available_internal_cols if col in PLOT_DISPLAY_MAPPING]
@@ -294,11 +307,12 @@ else:
                  else: st.info("Select data types to plot.")
 
         with tab_data:
-             # (Tab content as before)
             st.subheader("Raw Data Table (Metric Units)")
+            st.info(f"Displaying {len(df)} rows.")
             st.dataframe(df, use_container_width=True)
             try:
                 csv = df.to_csv(index=False).encode('utf-8')
-                fname = f"ride_data_{ride_id}_{Path(summary.get('filename', '')).stem if summary else ''}"
-                st.download_button("Download Data as CSV", csv, f"{fname}.csv", 'text/csv', key=f"download_csv_{ride_id}")
+                fname_stem = Path(summary.get('filename', '')).stem if summary else ''
+                fname = f"ride_data_{ride_id}_{fname_stem}.csv"
+                st.download_button("Download Data as CSV", csv, fname, 'text/csv', key=f"download_csv_{ride_id}")
             except Exception as e: st.warning(f"Could not generate CSV: {e}")
