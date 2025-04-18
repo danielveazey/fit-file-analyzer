@@ -59,7 +59,8 @@ A Python application using Streamlit to parse, analyze, visualize, and store his
 3.  Run the Streamlit app:
     ```bash
     streamlit run app.py
-    ```    4.  The application should automatically open in your default web browser.
+    ```
+4.  The application should automatically open in your default web browser.
 
 ## Directory Structure
 
