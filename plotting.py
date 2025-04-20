@@ -2,15 +2,18 @@
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import folium
+from folium.plugins import Fullscreen # Import Fullscreen plugin
+from folium import LayerControl # Import LayerControl plugin
 import pandas as pd
 import logging
 from scipy.stats import linregress
 import numpy as np
-import pytz # Added pytz
+import pytz
 
 logger = logging.getLogger(__name__)
 
 # Function to plot time series data
+# (plot_data function remains unchanged, so omitted for brevity)
 def plot_data(df, y_vars, x_var='timestamp', timezone_str=None, display_mapping=None, conversions=None, add_regression_for=None): # Added timezone_str
     """Creates interactive Plotly chart, converting timestamp x-axis to local timezone if provided."""
     if df is None or df.empty: logger.warning("Plotting: DF empty."); return None
@@ -131,7 +134,7 @@ def plot_data(df, y_vars, x_var='timestamp', timezone_str=None, display_mapping=
     return fig
 
 
-# plot_zone_chart remains unchanged
+# plot_zone_chart function remains unchanged, so omitted for brevity
 def plot_zone_chart(zone_times_values, zone_labels, title, color_scale='Viridis'):
     if not zone_times_values or not zone_labels or len(zone_times_values) != len(zone_labels):
         logger.error(f"Invalid input for plot_zone_chart: {title}")
@@ -160,41 +163,134 @@ def plot_zone_chart(zone_times_values, zone_labels, title, color_scale='Viridis'
     fig.update_layout(title=title, xaxis_title="Time (Seconds)", yaxis_title="Zone", yaxis=dict(autorange="reversed"), height=max(300, len(zone_labels) * 50), margin=dict(l=120, r=30, t=50, b=50), xaxis=dict(range=[0, max(plot_values) * 1.1]))
     return fig
 
-# plot_route_map corrected
+
+# --- plot_route_map REVISED ---
 def plot_route_map(df):
-    """Generates a Folium map showing the ride route."""
+    """Generates a Folium map showing the ride route with layer control and fullscreen."""
     if df is None or df.empty: logger.warning("Map: DataFrame is empty."); return None
     if 'latitude' not in df.columns or 'longitude' not in df.columns: logger.error("Map plotting requires 'latitude' and 'longitude'."); return None
+
     map_df = df[['latitude', 'longitude']].dropna().copy()
     map_df = map_df[map_df['latitude'].between(-90, 90) & map_df['longitude'].between(-180, 180)]
     if len(map_df) < 2: logger.warning(f"Map: Need >= 2 valid GPS points after range check, found {len(map_df)}."); return None
+
     try:
         locations = map_df.values.tolist(); avg_lat = map_df['latitude'].mean(); avg_lon = map_df['longitude'].mean()
     except Exception as e: logger.error(f"Map calculation error: {e}", exc_info=True); return None
-    m = folium.Map(location=[avg_lat, avg_lon], zoom_start=13, tiles='CartoDB positron')
-    if locations:
-        try: folium.PolyLine(locations=locations, color='blue', weight=3, opacity=0.7).add_to(m)
-        except Exception as e: logger.error(f"Map PolyLine drawing error: {e}")
 
-        # Add Start Marker
+    # --- Initialize Map WITHOUT default tiles ---
+    # Setting tiles=None prevents the default 'openstreetmap' layer
+    m = folium.Map(location=[avg_lat, avg_lon], zoom_start=13, tiles=None)
+
+    # --- Define Attribution Strings ---
+    osm_attr = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    carto_attr = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>'
+    esri_attr = 'Tiles © Esri — Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+    opentopo_attr = 'Map data: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="http://viewfinderpanoramas.org">SRTM</a> | Map style: © <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)'
+
+    # --- Add Selected Tile Layers ---
+    # 1. OpenStreetMap (Standard) - Explicitly added
+    folium.TileLayer(
+        tiles='https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        attr=osm_attr,
+        name='OpenStreetMap', # Display Name (Title Case)
+        overlay=False,
+        control=True
+    ).add_to(m)
+
+    # 2. ESRI World Imagery (Satellite/Aerial)
+    folium.TileLayer(
+        tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        attr=esri_attr,
+        name='Aerial / Satellite (ESRI)',
+        overlay=False,
+        control=True
+    ).add_to(m)
+
+    # 3. OpenTopoMap - Added back
+    folium.TileLayer(
+        tiles='https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+        attr=opentopo_attr,
+        name='OpenTopoMap', # Display Name
+        subdomains='abc',
+        overlay=False,
+        control=True
+    ).add_to(m)
+
+    # 4. CartoDB Positron (Light Theme)
+    folium.TileLayer(
+        tiles='https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+        attr=carto_attr,
+        name='CartoDB Positron (Light)',
+        subdomains='abcd',
+        overlay=False,
+        control=True
+    ).add_to(m)
+
+    # --- Add Ride Data ---
+    if locations:
+        # Create a FeatureGroup for the ride path and markers
+        ride_group = folium.FeatureGroup(name='Ride Data', show=True)
+        m.add_child(ride_group)
+
         try:
-            folium.Marker(location=locations[0], popup='Start', icon=folium.Icon(color='green', icon='play')).add_to(m)
+            # Add the route line to the group
+            folium.PolyLine(
+                locations=locations,
+                color='blue',
+                weight=3,
+                opacity=0.7,
+                tooltip='Ride Path'
+            ).add_to(ride_group)
+        except Exception as e:
+            logger.error(f"Map PolyLine drawing error: {e}")
+
+        # Add Start Marker to the group
+        try:
+            folium.Marker(
+                location=locations[0],
+                popup='Start',
+                tooltip='Start Point',
+                icon=folium.Icon(color='green', icon='play')
+            ).add_to(ride_group)
         except IndexError:
-            pass # Corrected: pass on its own line
+            pass
         except Exception as e:
             logger.error(f"Map start marker error: {e}")
 
-        # Add End Marker
+        # Add End Marker to the group
         try:
             if locations: # Check again just to be safe
-                 folium.Marker(location=locations[-1], popup='End', icon=folium.Icon(color='red', icon='stop')).add_to(m)
+                 folium.Marker(
+                    location=locations[-1],
+                    popup='End',
+                    tooltip='End Point',
+                    icon=folium.Icon(color='red', icon='stop')
+                 ).add_to(ride_group)
         except IndexError:
-            pass # Corrected: pass on its own line
+            pass
         except Exception as e:
             logger.error(f"Map end marker error: {e}")
 
-        # Fit map bounds
-        try: m.fit_bounds(folium.PolyLine(locations=locations).get_bounds(), padding=(0.01, 0.01))
-        except Exception as e: logger.warning(f"Map fit_bounds error: {e}")
+        # Fit map bounds to the polyline
+        try:
+            bounds = folium.PolyLine(locations=locations).get_bounds()
+            m.fit_bounds(bounds, padding=(0.01, 0.01))
+        except Exception as e:
+            logger.warning(f"Map fit_bounds error: {e}")
 
+    # --- Add Controls ---
+    # Add Fullscreen button
+    Fullscreen(
+        position="topright",
+        title="Expand map",
+        title_cancel="Exit fullscreen",
+        force_separate_button=True,
+    ).add_to(m)
+
+    # Add Layer Control (Must be added AFTER layers and features/groups)
+    LayerControl(collapsed=False).add_to(m)
+
+    logger.info("Generated Folium map with revised Layers and Fullscreen control.")
     return m
+# --- END plot_route_map REVISED ---
