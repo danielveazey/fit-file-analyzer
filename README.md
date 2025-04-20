@@ -11,8 +11,8 @@ A Python application using Streamlit to parse, analyze, visualize, and store his
 *   **Unit Conversion:** Displays metrics in user-friendly Imperial units (miles, mph, feet) while storing data in metric units.
 *   **Interactive Map:** Shows the ride route on an interactive Folium map.
 *   **Interactive Plots:** Generates Plotly charts for selected metrics (Speed, Elevation, Heart Rate, etc.) over time.
-*   **Zone Analysis** View times spent in each heart rate and power zone as recorded by the GPS
-*   **Custom Zones** Define zones that override zones defined on the GPS
+*   **Zone Analysis:** View times spent in each heart rate and power zone as recorded by the GPS
+*   **Custom Zones:** Define zones that override zones defined on the GPS
 *   **Data Export:** Allows downloading the raw (metric) data table as a CSV file.
 *   **Web Interface:** Built with Streamlit for an easy-to-use web UI.
 
